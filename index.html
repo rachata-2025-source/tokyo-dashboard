@@ -11,6 +11,7 @@
         body { font-family: 'Kanit', sans-serif; background-color: #f8fafc; }
         .stat-card { transition: transform 0.2s; }
         .stat-card:hover { transform: translateY(-5px); }
+        .active-tab { border-bottom: 3px solid #f97316; color: #f97316; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -58,21 +59,51 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-2">
-                <h3 class="text-lg font-bold mb-4 flex items-center">📝 รายการบิล <span id="billCountLabel" class="ml-2 text-sm font-normal text-gray-400"></span></h3>
-                <div id="billContainer" class="space-y-4">
-                    <p class="text-gray-400 italic">เลือกช่วงเวลาแล้วกดปุ่ม "ดึงข้อมูล"</p>
+                <div class="flex border-b mb-6 bg-white rounded-t-xl overflow-hidden">
+                    <button onclick="switchView('bills')" id="tabBills" class="flex-1 py-3 px-4 font-bold active-tab transition-all">
+                        📝 รายการบิล
+                    </button>
+                    <button onclick="switchView('summary')" id="tabSummary" class="flex-1 py-3 px-4 font-bold text-gray-500 hover:text-orange-500 transition-all">
+                        🥙 สรุปตามไส้
+                    </button>
+                </div>
+
+                <div id="billView">
+                    <h3 class="text-lg font-bold mb-4 flex items-center">
+                        รายการบิล <span id="billCountLabel" class="ml-2 text-sm font-normal text-gray-400"></span>
+                    </h3>
+                    <div id="billContainer" class="space-y-4">
+                        <p class="text-gray-400 italic text-center p-10">กรุณากดปุ่ม "ดึงข้อมูล"</p>
+                    </div>
+                </div>
+
+                <div id="summaryView" class="hidden">
+                    <h3 class="text-lg font-bold mb-4">🥙 รายงานสรุปยอดตามไส้</h3>
+                    <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 text-gray-600 text-sm">
+                                <tr>
+                                    <th class="p-4">ชื่อไส้ / รายการ</th>
+                                    <th class="p-4 text-center">จำนวน (ชิ้น)</th>
+                                    <th class="p-4 text-right">ยอดรวม (บาท)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fillingSummaryTable" class="divide-y divide-gray-100">
+                                </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <div class="space-y-8">
                 <div class="bg-white p-6 rounded-2xl shadow-sm">
-                    <h3 class="font-bold mb-4 border-b pb-2">🏆 อันดับไส้ขายดี</h3>
+                    <h3 class="font-bold mb-4 border-b pb-2 text-orange-600">🏆 Top 10 ไส้ขายดี</h3>
                     <div id="fillingRank" class="space-y-3">
                         </div>
                 </div>
                 
                 <div class="bg-white p-6 rounded-2xl shadow-sm">
-                    <h3 class="font-bold mb-4 border-b pb-2">📊 สัดส่วนรายได้</h3>
+                    <h3 class="font-bold mb-4 border-b pb-2 text-blue-600">📊 สัดส่วนรายได้</h3>
                     <canvas id="revenueChart"></canvas>
                 </div>
             </div>
@@ -88,21 +119,46 @@
             authDomain: "tokyo-order-app.firebaseapp.com",
             projectId: "tokyo-order-app",
             storageBucket: "tokyo-order-app.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            messagingSenderId: "411815226779", // ควรเปลี่ยนเป็น ID จริงของคุณ
+            appId: "1:411815226779:web:373e1ca32daaac264cc53e"             // ควรเปลี่ยนเป็น ID จริงของคุณ
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- Logic Dashboard ---
+        let lastFetchedBills = []; // เก็บข้อมูลไว้สลับ Tab โดยไม่ต้องโหลดใหม่
+
+        // --- View Switching ---
+        window.switchView = (view) => {
+            const billView = document.getElementById('billView');
+            const summaryView = document.getElementById('summaryView');
+            const tabBills = document.getElementById('tabBills');
+            const tabSummary = document.getElementById('tabSummary');
+
+            if (view === 'bills') {
+                billView.classList.remove('hidden');
+                summaryView.classList.add('hidden');
+                tabBills.classList.add('active-tab');
+                tabSummary.classList.remove('active-tab');
+                tabSummary.classList.add('text-gray-500');
+            } else {
+                billView.classList.add('hidden');
+                summaryView.classList.remove('hidden');
+                tabSummary.classList.add('active-tab');
+                tabBills.classList.remove('active-tab');
+                tabBills.classList.add('text-gray-500');
+                renderFillingSummary(); // วาดตารางสรุปใหม่ทุกครั้งที่สลับมา
+            }
+        };
+
+        // --- Date Logic ---
         window.setDateRange = (range) => {
             const startInput = document.getElementById('startDate');
             const endInput = document.getElementById('endDate');
             const now = new Date();
             let start = new Date();
 
-            if (range === 'today') { /* คงเดิม */ }
+            if (range === 'today') { /* no change */ }
             else if (range === 'yesterday') { start.setDate(now.getDate() - 1); now.setDate(now.getDate() - 1); }
             else if (range === 'week') { start.setDate(now.getDate() - now.getDay()); }
             else if (range === 'month') { start.setDate(1); }
@@ -112,6 +168,7 @@
             fetchData();
         };
 
+        // --- Data Fetching ---
         window.fetchData = async () => {
             const start = document.getElementById('startDate').value;
             const end = document.getElementById('endDate').value;
@@ -119,7 +176,7 @@
             
             if (!start || !end) return alert('กรุณาเลือกวันที่');
             
-            container.innerHTML = '<div class="text-center p-10 text-orange-500">⌛ กำลังดึงข้อมูล...</div>';
+            container.innerHTML = '<div class="text-center p-10 text-orange-500">⌛ กำลังดึงข้อมูลจาก Cloud...</div>';
 
             try {
                 const q = query(
@@ -130,13 +187,14 @@
                 );
 
                 const snap = await getDocs(q);
-                const bills = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                lastFetchedBills = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
-                processAnalytics(bills);
-                renderBillCards(bills);
+                processAnalytics(lastFetchedBills);
+                renderBillCards(lastFetchedBills);
+                renderFillingSummary(); // เตรียมข้อมูลหน้าสรุปไว้ด้วย
             } catch (err) {
                 console.error(err);
-                container.innerHTML = `<div class="text-red-500 italic">เกิดข้อผิดพลาด: ${err.message}</div>`;
+                container.innerHTML = `<div class="text-red-500 italic p-10 text-center">เกิดข้อผิดพลาด: ${err.message}</div>`;
             }
         };
 
@@ -155,21 +213,19 @@
                 });
             });
 
-            // อัปเดตตัวเลขหน้าจอ
             document.getElementById('totalRevenue').innerText = `฿${totalRevenue.toLocaleString()}`;
             document.getElementById('totalBills').innerText = `${bills.length} บิล`;
-            document.getElementById('billCountLabel').innerText = `(พบทั้งหมด ${bills.length} รายการ)`;
+            document.getElementById('billCountLabel').innerText = `(${bills.length})`;
 
-            // จัดอันดับไส้
             const sortedFillings = Object.entries(fillingMap).sort((a, b) => b[1] - a[1]);
             const best = sortedFillings[0] ? `${sortedFillings[0][0]} (${sortedFillings[0][1]} ชิ้น)` : '-';
             document.getElementById('bestSeller').innerText = best;
 
             const rankDiv = document.getElementById('fillingRank');
             rankDiv.innerHTML = sortedFillings.slice(0, 10).map(([name, qty], i) => `
-                <div class="flex justify-between items-center text-sm">
+                <div class="flex justify-between items-center text-sm p-1 border-b border-gray-50 last:border-0">
                     <span class="text-gray-600 truncate mr-2">${i+1}. ${name}</span>
-                    <span class="font-bold bg-orange-100 text-orange-600 px-2 rounded">${qty}</span>
+                    <span class="font-bold text-orange-600">${qty}</span>
                 </div>
             `).join('');
         }
@@ -182,21 +238,56 @@
             }
 
             container.innerHTML = bills.map(b => `
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:border-orange-200 transition-colors">
                     <div class="flex justify-between items-start mb-2">
                         <div>
-                            <span class="text-xs font-bold text-orange-500 uppercase">${b.date} | ${b.time}</span>
-                            <h4 class="font-bold">คิวที่ #${b.billNo}</h4>
+                            <span class="text-xs font-bold text-orange-500 uppercase tracking-wider">${b.date} | ${b.time || ''}</span>
+                            <h4 class="font-bold text-lg">คิวที่ #${b.billNo}</h4>
                         </div>
-                        <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold">
+                        <span class="bg-orange-50 text-orange-600 text-xs px-3 py-1 rounded-full font-bold">
                             ${b.pieces.reduce((s,p)=> s + (p.qty||1), 0)} ชิ้น
                         </span>
                     </div>
-                    <div class="text-sm text-gray-600 space-y-1">
-                        ${b.pieces.map(p => `<div>• ${p.items.join('+')} <span class="text-gray-400">x${p.qty}</span></div>`).join('')}
+                    <div class="text-sm text-gray-600 space-y-1 pl-2 border-l-2 border-gray-100">
+                        ${b.pieces.map(p => `<div>• ${p.items.join('+')} <span class="text-gray-400 ml-1">x${p.qty}</span></div>`).join('')}
                     </div>
-                    ${b.note ? `<div class="mt-2 text-xs text-blue-500 italic bg-blue-50 p-2 rounded">📝 ${b.note}</div>` : ''}
+                    ${b.note ? `<div class="mt-3 text-xs text-blue-600 italic bg-blue-50 p-2 rounded-lg">📝 ${b.note}</div>` : ''}
                 </div>
+            `).join('');
+        }
+
+        // --- ใหม่: ฟังก์ชันแสดงสรุปยอดตามไส้ลงตาราง ---
+        function renderFillingSummary() {
+            const tableBody = document.getElementById('fillingSummaryTable');
+            let fillingStats = {};
+
+            lastFetchedBills.forEach(bill => {
+                bill.pieces.forEach(p => {
+                    const name = p.items.join('+');
+                    const qty = parseInt(p.qty || 1);
+                    const price = parseInt(p.price || 0);
+                    
+                    if (!fillingStats[name]) {
+                        fillingStats[name] = { qty: 0, revenue: 0 };
+                    }
+                    fillingStats[name].qty += qty;
+                    fillingStats[name].revenue += (price * qty);
+                });
+            });
+
+            const sorted = Object.entries(fillingStats).sort((a, b) => b[1].qty - a[1].qty);
+
+            if (sorted.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" class="p-10 text-center text-gray-400 italic">ไม่มีข้อมูลการขาย</td></tr>';
+                return;
+            }
+
+            tableBody.innerHTML = sorted.map(([name, stat]) => `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="p-4 font-medium text-gray-700">${name}</td>
+                    <td class="p-4 text-center font-bold text-orange-600">${stat.qty.toLocaleString()}</td>
+                    <td class="p-4 text-right font-bold text-gray-800">฿${stat.revenue.toLocaleString()}</td>
+                </tr>
             `).join('');
         }
 

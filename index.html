@@ -12,6 +12,24 @@
         .stat-card { transition: transform 0.2s; }
         .stat-card:hover { transform: translateY(-5px); }
         .active-tab { border-bottom: 3px solid #f97316; color: #f97316; }
+        
+        /* สไตล์พิเศษสำหรับทำ Tooltip (ข้อ 4) */
+        .tooltip { position: relative; display: inline-block; cursor: pointer; }
+        .tooltip .tooltiptext {
+            visibility: hidden; width: 220px; background-color: #334155; color: #fff;
+            text-align: center; border-radius: 6px; padding: 6px; position: absolute;
+            z-index: 10; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0;
+            transition: opacity 0.2s; font-size: 12px; font-weight: normal; line-height: 1.4;
+        }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+        
+        /* แอนิเมชัน Spinner สำหรับ Loading (ข้อ 2) */
+        .spinner {
+            border: 3px solid #f3f3f3; border-top: 3px solid #f97316;
+            border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;
+            display: inline-block; vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="text-gray-800">
@@ -25,9 +43,49 @@
 
     <main class="container mx-auto p-4 md:p-8">
         
+        <section class="bg-white p-6 rounded-2xl shadow-sm mb-8">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+                <h3 class="text-lg font-bold text-gray-700 flex items-center gap-2">
+                    📅 สรุปยอดขายรายเดือน (ย้อนหลัง)
+                </h3>
+                <div class="flex items-center gap-4">
+                    <button id="exportCsvBtn" onclick="exportMonthlyToCSV()" class="hidden text-xs bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-emerald-600 shadow-sm transition-all">
+                        📥 ดาวน์โหลดข้อมูล (CSV)
+                    </button>
+
+                    <button id="toggleMonthlyBtn" onclick="toggleMonthlyView()" class="hidden text-sm font-bold text-orange-500 hover:text-orange-600">
+                        ดูทั้งหมด ➔
+                    </button>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left min-w-[700px]">
+                    <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
+    <tr>
+        <th class="p-3 w-[20%]">เดือน</th>
+        <th class="p-3 text-right w-[20%]">ยอดขาย</th>
+        <th class="p-3 text-center w-[20%]">จำนวนบิล</th>
+        <th class="p-3 text-center w-[15%]">จำนวนชิ้น</th>
+        <th class="p-3 w-[25%]">ไส้ที่ขายดีที่สุด</th>
+    </tr>
+</thead>
+                    <tbody id="monthlySummaryTable" class="divide-y divide-gray-100 text-sm">
+                        <tr>
+                            <td colspan="6" class="text-center p-8 text-orange-500 font-medium">
+                                <div class="spinner mr-2"></div> กำลังคำนวณยอดรายเดือนย้อนหลังจากคลาวด์...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <hr class="my-8 border-gray-200">
+
         <section class="bg-white p-4 rounded-xl shadow-sm mb-8 flex flex-wrap gap-4 items-end">
             <div class="flex-1 min-w-[200px]">
-                <label class="block text-sm font-medium text-gray-600 mb-1">เลือกช่วงเวลา</label>
+                <label class="block text-sm font-medium text-gray-600 mb-1">เลือกช่วงเวลาแสดงผลด้านล่าง</label>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <button onclick="setDateRange('today')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">วันนี้</button>
                     <button onclick="setDateRange('yesterday')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">เมื่อวาน</button>
@@ -44,15 +102,15 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-orange-500">
-                <p class="text-gray-500 text-sm">ยอดรวมยอดขาย</p>
+                <p class="text-gray-500 text-sm">ยอดขายช่วงที่เลือก</p>
                 <h2 id="totalRevenue" class="text-3xl font-bold text-orange-600">฿0</h2>
             </div>
             <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-blue-500">
-                <p class="text-gray-500 text-sm">จำนวนบิลทั้งหมด</p>
+                <p class="text-gray-500 text-sm">จำนวนบิลช่วงที่เลือก</p>
                 <h2 id="totalBills" class="text-3xl font-bold text-blue-600">0 บิล</h2>
             </div>
             <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-green-500">
-                <p class="text-gray-500 text-sm">ไส้ที่ขายดีที่สุด</p>
+                <p class="text-gray-500 text-sm">ไส้ที่ขายดีช่วงที่เลือก</p>
                 <h2 id="bestSeller" class="text-2xl font-bold text-green-600">-</h2>
             </div>
         </div>
@@ -88,8 +146,7 @@
                                     <th class="p-4 text-right">ยอดรวม (บาท)</th>
                                 </tr>
                             </thead>
-                            <tbody id="fillingSummaryTable" class="divide-y divide-gray-100">
-                                </tbody>
+                            <tbody id="fillingSummaryTable" class="divide-y divide-gray-100"></tbody>
                         </table>
                     </div>
                 </div>
@@ -97,9 +154,8 @@
 
             <div class="space-y-8">
                 <div class="bg-white p-6 rounded-2xl shadow-sm">
-                    <h3 class="font-bold mb-4 border-b pb-2 text-orange-600">🏆 Top 10 ไส้ขายดี</h3>
-                    <div id="fillingRank" class="space-y-3">
-                        </div>
+                    <h3 class="font-bold mb-4 border-b pb-2 text-orange-600">🏆 Top 10 ไส้ขายดี (ช่วงที่เลือก)</h3>
+                    <div id="fillingRank" class="space-y-3"></div>
                 </div>
                 
                 <div class="bg-white p-6 rounded-2xl shadow-sm">
@@ -111,72 +167,166 @@
     </main>
 
     <script type="module">
+        // 1. รวมคำสั่ง import ทุกอย่างไว้ที่หัวแถวที่เดียว ไม่มีคำซ้ำแน่นอนครับ
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { 
+            getFirestore, 
+            collection, 
+            query, 
+            where, 
+            getDocs, 
+            orderBy, 
+            doc, 
+            updateDoc, 
+            writeBatch, 
+            serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCx6SGBBh979y6cjyOL75f5PdSr8AZkz0g",
             authDomain: "tokyo-order-app.firebaseapp.com",
             projectId: "tokyo-order-app",
             storageBucket: "tokyo-order-app.appspot.com",
-            messagingSenderId: "411815226779", // ควรเปลี่ยนเป็น ID จริงของคุณ
-            appId: "1:411815226779:web:373e1ca32daaac264cc53e"             // ควรเปลี่ยนเป็น ID จริงของคุณ
+            messagingSenderId: "411815226779", 
+            appId: "1:411815226779:web:373e1ca32daaac264cc53e"             
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        let lastFetchedBills = []; // เก็บข้อมูลไว้สลับ Tab โดยไม่ต้องโหลดใหม่
+        let lastFetchedBills = []; 
+        let monthlyDataCache = []; 
+        let showAllMonths = false;  
 
-        // --- View Switching ---
-        window.switchView = (view) => {
-            const billView = document.getElementById('billView');
-            const summaryView = document.getElementById('summaryView');
-            const tabBills = document.getElementById('tabBills');
-            const tabSummary = document.getElementById('tabSummary');
 
-            if (view === 'bills') {
-                billView.classList.remove('hidden');
-                summaryView.classList.add('hidden');
-                tabBills.classList.add('active-tab');
-                tabSummary.classList.remove('active-tab');
-                tabSummary.classList.add('text-gray-500');
-            } else {
-                billView.classList.add('hidden');
-                summaryView.classList.remove('hidden');
-                tabSummary.classList.add('active-tab');
-                tabBills.classList.remove('active-tab');
-                tabBills.classList.add('text-gray-500');
-                renderFillingSummary(); // วาดตารางสรุปใหม่ทุกครั้งที่สลับมา
+        // --- 📅 ดึงข้อมูลทำสรุปรายเดือนอิสระจากคอลเลกชันใหม่ ---
+        async function fetchMonthlySummaryOnly() {
+            try {
+                const q = query(collection(db, "monthly_stats"), orderBy("monthKey", "desc"));
+                const snap = await getDocs(q);
+                
+                let tempArray = snap.docs.map(doc => {
+                    const data = doc.data();
+                    const dateObj = new Date(data.monthKey + "-02");
+                    const formattedMonth = dateObj.toLocaleDateString('th-TH', { month: 'short', year: 'numeric' });
+
+                    return { 
+                        month: formattedMonth, 
+                        monthKey: data.monthKey, 
+                        revenue: data.revenue || 0,
+                        billsCount: data.billsCount || 0,
+                        piecesCount: data.piecesCount || 0,
+                        bestSeller: data.bestSeller || '-',
+                        growthStr: '-' 
+                    };
+                }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+
+                for (let i = 0; i < tempArray.length; i++) {
+                    if (i > 0) {
+                        const prevRevenue = tempArray[i - 1].revenue;
+                        const currRevenue = tempArray[i].revenue;
+                        if (prevRevenue > 0) {
+                            const growth = ((currRevenue - prevRevenue) / prevRevenue) * 100;
+                            if (growth > 0) {
+                                tempArray[i].growthStr = `<span class="text-emerald-600 font-bold">▲ ${growth.toFixed(1)}%</span>`;
+                            } else if (growth < 0) {
+                                tempArray[i].growthStr = `<span class="text-red-500 font-bold">▼ ${Math.abs(growth).toFixed(1)}%</span>`;
+                            } else {
+                                tempArray[i].growthStr = `<span class="text-gray-500">0.0%</span>`;
+                            }
+                        }
+                    }
+                }
+
+                monthlyDataCache = tempArray.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+                renderMonthlyTable();
+            } catch (err) {
+                console.error("Monthly Error:", err);
+                document.getElementById('monthlySummaryTable').innerHTML = `<tr><td colspan="5" class="text-center p-4 text-red-500">ไม่สามารถโหลดข้อมูลรายเดือนได้: ${err.message}</td></tr>`;
             }
+        }
+
+        function renderMonthlyTable() {
+            const tableBody = document.getElementById('monthlySummaryTable');
+            const toggleBtn = document.getElementById('toggleMonthlyBtn');
+            const csvBtn = document.getElementById('exportCsvBtn');
+
+            if (!tableBody || monthlyDataCache.length === 0) {
+                if(tableBody) tableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400 italic">ไม่พบข้อมูลยอดขายในระบบ</td></tr>';
+                if(csvBtn) csvBtn.classList.add('hidden');
+                return;
+            }
+
+            if(csvBtn) csvBtn.classList.remove('hidden');
+
+            const displayData = showAllMonths ? monthlyDataCache : monthlyDataCache.slice(0, 4);
+            
+            if (monthlyDataCache.length > 4) {
+                if(toggleBtn) {
+                    toggleBtn.classList.remove('hidden');
+                    toggleBtn.innerText = showAllMonths ? '💡 แสดงน้อยลง' : `ดูทั้งหมด (${monthlyDataCache.length}) ➔`;
+                }
+            } else {
+                if(toggleBtn) toggleBtn.classList.add('hidden');
+            }
+
+            tableBody.innerHTML = displayData.map(d => {
+                let growthBadge = '';
+                if (d.growthStr && d.growthStr !== '-') {
+                    growthBadge = ` <span class="text-xs font-normal">${d.growthStr}</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="p-3 font-semibold text-gray-700 w-[20%]">${d.month}${growthBadge}</td>
+                        <td class="p-3 text-right font-bold text-orange-600 w-[20%]">฿${d.revenue.toLocaleString()}</td>
+                        <td class="p-3 text-center text-blue-600 font-medium w-[20%]">${d.billsCount.toLocaleString()} บิล</td>
+                        <td class="p-3 text-center text-green-600 font-medium w-[15%]">${d.piecesCount.toLocaleString()} ชิ้น</td>
+                        <td class="p-3 text-gray-600 w-[25%] max-w-[180px]">
+                            <div class="tooltip truncate w-full" title="${d.bestSeller}">
+                                ${d.bestSeller}
+                                <span class="tooltiptext">${d.bestSeller}</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.toggleMonthlyView = () => {
+            showAllMonths = !showAllMonths;
+            renderMonthlyTable();
         };
 
-        // --- Date Logic ---
-        window.setDateRange = (range) => {
-            const startInput = document.getElementById('startDate');
-            const endInput = document.getElementById('endDate');
-            const now = new Date();
-            let start = new Date();
-
-            if (range === 'today') { /* no change */ }
-            else if (range === 'yesterday') { start.setDate(now.getDate() - 1); now.setDate(now.getDate() - 1); }
-            else if (range === 'week') { start.setDate(now.getDate() - now.getDay()); }
-            else if (range === 'month') { start.setDate(1); }
-
-            startInput.value = start.toISOString().split('T')[0];
-            endInput.value = now.toISOString().split('T')[0];
-            fetchData();
+        window.exportMonthlyToCSV = () => {
+            if (monthlyDataCache.length === 0) return alert('ไม่มีข้อมูลสำหรับดาวน์โหลด');
+            let csvContent = "\uFEFF"; 
+            csvContent += "เดือน,ยอดขาย(บาท),จำนวนบิล,จำนวนชิ้น,ไส้ที่ขายดีที่สุด\n";
+            
+            monthlyDataCache.forEach(d => {
+                const cleanBestSeller = d.bestSeller.replace(/,/g, ' '); 
+                csvContent += `${d.month},${d.revenue},${d.billsCount},${d.piecesCount},${cleanBestSeller}\n`;
+            });
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `รายงานรายเดือน_MaKinTokyo_${new Date().toISOString().substring(0,10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         };
 
-        // --- Data Fetching ---
+        // --- 🔍 ฟังก์ชันกรองปฏิทินของเดิม ---
         window.fetchData = async () => {
             const start = document.getElementById('startDate').value;
             const end = document.getElementById('endDate').value;
             const container = document.getElementById('billContainer');
             
             if (!start || !end) return alert('กรุณาเลือกวันที่');
-            
-            container.innerHTML = '<div class="text-center p-10 text-orange-500">⌛ กำลังดึงข้อมูลจาก Cloud...</div>';
+            container.innerHTML = '<div class="text-center p-10 text-orange-500"><div class="spinner mr-2"></div> กำลังดึงข้อมูลช่วงที่เลือก...</div>';
 
             try {
                 const q = query(
@@ -191,7 +341,7 @@
                 
                 processAnalytics(lastFetchedBills);
                 renderBillCards(lastFetchedBills);
-                renderFillingSummary(); // เตรียมข้อมูลหน้าสรุปไว้ด้วย
+                renderFillingSummary(); 
             } catch (err) {
                 console.error(err);
                 container.innerHTML = `<div class="text-red-500 italic p-10 text-center">เกิดข้อผิดพลาด: ${err.message}</div>`;
@@ -201,8 +351,13 @@
         function processAnalytics(bills) {
             let totalRevenue = 0;
             let fillingMap = {};
+            let currentMonthKey = new Date().toISOString().substring(0, 7);
+            let isCurrentMonthSelected = false;
 
             bills.forEach(bill => {
+                if (bill.date && bill.date.substring(0, 7) === currentMonthKey) {
+                    isCurrentMonthSelected = true;
+                }
                 bill.pieces.forEach(p => {
                     const qty = parseInt(p.qty || 1);
                     const price = parseInt(p.price || 0);
@@ -222,16 +377,33 @@
             document.getElementById('bestSeller').innerText = best;
 
             const rankDiv = document.getElementById('fillingRank');
-            rankDiv.innerHTML = sortedFillings.slice(0, 10).map(([name, qty], i) => `
-                <div class="flex justify-between items-center text-sm p-1 border-b border-gray-50 last:border-0">
-                    <span class="text-gray-600 truncate mr-2">${i+1}. ${name}</span>
-                    <span class="font-bold text-orange-600">${qty}</span>
-                </div>
-            `).join('');
+            if(rankDiv) {
+                rankDiv.innerHTML = sortedFillings.slice(0, 10).map(([name, qty], i) => `
+                    <div class="flex justify-between items-center text-sm p-1 border-b border-gray-50 last:border-0">
+                        <span class="text-gray-600 truncate mr-2">${i+1}. ${name}</span>
+                        <span class="font-bold text-orange-600">${qty}</span>
+                    </div>
+                `).join('');
+            }
+
+            // แอบส่งข้อมูลไส้ขายดีกลับไปอัพเดตรายเดือนเงียบๆ
+            if (isCurrentMonthSelected && sortedFillings[0]) {
+                const correctBestSeller = `${sortedFillings[0][0]} (${sortedFillings[0][1]} ชิ้น)`;
+                const monthlyRef = doc(db, "monthly_stats", currentMonthKey);
+                
+                updateDoc(monthlyRef, { bestSeller: correctBestSeller }).then(() => {
+                    const currentMonthData = monthlyDataCache.find(d => d.monthKey === currentMonthKey);
+                    if (currentMonthData) {
+                        currentMonthData.bestSeller = correctBestSeller;
+                        renderMonthlyTable();
+                    }
+                }).catch(err => console.error("Auto-update failed:", err));
+            }
         }
 
         function renderBillCards(bills) {
             const container = document.getElementById('billContainer');
+            if (!container) return;
             if (bills.length === 0) {
                 container.innerHTML = '<p class="text-center p-10 text-gray-400">ไม่พบข้อมูลบิลในช่วงเวลานี้</p>';
                 return;
@@ -256,9 +428,9 @@
             `).join('');
         }
 
-        // --- ใหม่: ฟังก์ชันแสดงสรุปยอดตามไส้ลงตาราง ---
         function renderFillingSummary() {
             const tableBody = document.getElementById('fillingSummaryTable');
+            if(!tableBody) return;
             let fillingStats = {};
 
             lastFetchedBills.forEach(bill => {
@@ -291,7 +463,50 @@
             `).join('');
         }
 
-        // ตั้งค่าเริ่มต้นเป็นวันนี้
+        window.switchView = (view) => {
+            const billView = document.getElementById('billView');
+            const summaryView = document.getElementById('summaryView');
+            const tabBills = document.getElementById('tabBills');
+            const tabSummary = document.getElementById('tabSummary');
+
+            if(billView && summaryView && tabBills && tabSummary) {
+                if (view === 'bills') {
+                    billView.classList.remove('hidden');
+                    summaryView.classList.add('hidden');
+                    tabBills.classList.add('active-tab');
+                    tabSummary.classList.remove('active-tab');
+                    tabSummary.classList.add('text-gray-500');
+                } else {
+                    billView.classList.add('hidden');
+                    summaryView.classList.remove('hidden');
+                    tabSummary.classList.add('active-tab');
+                    tabBills.classList.remove('active-tab');
+                    tabBills.classList.add('text-gray-500');
+                    renderFillingSummary(); 
+                }
+            }
+        };
+
+        window.setDateRange = (range) => {
+            const startInput = document.getElementById('startDate');
+            const endInput = document.getElementById('endDate');
+            const now = new Date();
+            let start = new Date();
+
+            if (range === 'today') { }
+            else if (range === 'yesterday') { start.setDate(now.getDate() - 1); now.setDate(now.getDate() - 1); }
+            else if (range === 'week') { start.setDate(now.getDate() - now.getDay()); }
+            else if (range === 'month') { start.setDate(1); }
+
+            if(startInput && endInput) {
+                startInput.value = start.toISOString().split('T')[0];
+                endInput.value = now.toISOString().split('T')[0];
+                fetchData();
+            }
+        };
+
+        // --- รันครั้งแรกเมื่อโหลดเว็บ ---
+        fetchMonthlySummaryOnly();
         window.setDateRange('month');
     </script>
 </body>

@@ -258,6 +258,7 @@
 
         // ดึงข้อมูลจาก Firebase Firestore Collection 'orders'
         // ดึงข้อมูลจาก Firebase Firestore Collection 'orders' (ครอบคลุมชื่อ Field ทุกรูปแบบ)
+// ดึงข้อมูลจาก Firebase Firestore ปรับโครงสร้างตรงตามเอกสารจริง
 async function loadDashboardData() {
     const icon = document.getElementById('refreshIcon');
     if (icon) icon.classList.add('fa-spin');
@@ -273,31 +274,45 @@ async function loadDashboardData() {
             const data = doc.data();
             const orderId = doc.id;
 
-            // 1. อ่านวันที่ และ เวลา
-            let dateStr = data.date || data.createdDate || '';
-            let timeStr = data.time || data.createdTime || '00:00';
+            // 1. อ่านวันที่ เวลา และเลขคิว (billNo)
+            let dateStr = data.date || '';
+            let timeStr = data.time || '00:00';
+            const queueNo = data.billNo ?? data.queue ?? '-';
 
-            if (data.createdAt && data.createdAt.toDate) {
-                const dt = data.createdAt.toDate();
-                dateStr = dt.toISOString().split('T')[0];
-                timeStr = dt.toTimeString().substring(0, 5);
-            } else if (data.timestamp && data.timestamp.toDate) {
-                const dt = data.timestamp.toDate();
-                dateStr = dt.toISOString().split('T')[0];
-                timeStr = dt.toTimeString().substring(0, 5);
+            // 2. ดึงรายการสินค้าจากอาร์เรย์ pieces
+            const piecesList = data.pieces || data.items || [];
+            let calculatedTotal = 0;
+
+            if (Array.isArray(piecesList)) {
+                piecesList.forEach(p => {
+                    // อ่านชื่อไส้ขนมจากอาร์เรย์ items ภายใน piece
+                    let fillingName = 'ไส้รวม';
+                    if (Array.isArray(p.items) && p.items.length > 0) {
+                        fillingName = p.items.join(' + ');
+                    } else if (typeof p.items === 'string') {
+                        fillingName = p.items;
+                    } else if (p.filling) {
+                        fillingName = p.filling;
+                    }
+
+                    const qty = Number(p.qty || 1);
+                    const price = Number(p.price || 0);
+                    const itemTotal = price * qty;
+
+                    calculatedTotal += itemTotal;
+
+                    fetchedDetails.push({
+                        billId: orderId,
+                        filling: fillingName,
+                        qty: qty,
+                        pricePerPiece: price,
+                        total: itemTotal
+                    });
+                });
             }
 
-            // 2. อ่าน คิว และ ยอดรวมเงิน (รองรับ queue, queueNo, q / totalAmount, total, totalPrice, amount)
-            const queueNo = data.queue || data.queueNo || data.q || data.queueNum || '-';
-            const totalAmt = Number(
-                data.totalAmount ?? 
-                data.total ?? 
-                data.totalPrice ?? 
-                data.grandTotal ?? 
-                data.amount ?? 
-                data.netTotal ?? 
-                0
-            );
+            // 3. ใช้ยอดรวมที่คำนวณได้จากชิ้นขนม
+            const totalAmt = Number(data.totalAmount || data.totalPrice || calculatedTotal);
 
             const orderObj = {
                 id: orderId,
@@ -308,26 +323,6 @@ async function loadDashboardData() {
                 status: data.status || 'done'
             };
             fetchedOrders.push(orderObj);
-
-            // 3. อ่านรายการไส้/สินค้า (รองรับ items, details, cart, orders, list, fillings)
-            const itemsList = data.items || data.details || data.cart || data.orders || data.list || data.fillings || [];
-            
-            if (Array.isArray(itemsList)) {
-                itemsList.forEach(item => {
-                    const fillingName = item.filling || item.name || item.title || item.flavor || item.item || 'ไส้รวม';
-                    const qty = Number(item.qty || item.quantity || item.count || item.amount || 1);
-                    const price = Number(item.pricePerPiece || item.price || item.unitPrice || 0);
-                    const total = Number(item.total || item.totalPrice || (qty * price));
-
-                    fetchedDetails.push({
-                        billId: orderId,
-                        filling: fillingName,
-                        qty: qty,
-                        pricePerPiece: price,
-                        total: total
-                    });
-                });
-            }
         });
 
         RAW_DATA.orders = fetchedOrders;

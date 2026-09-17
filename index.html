@@ -2,512 +2,683 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ma Kin Tokyo | Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ma Kin Tokyo | Dashboard (Firebase)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Kanit', sans-serif; background-color: #f8fafc; }
-        .stat-card { transition: transform 0.2s; }
-        .stat-card:hover { transform: translateY(-5px); }
-        .active-tab { border-bottom: 3px solid #f97316; color: #f97316; }
-        
-        /* สไตล์พิเศษสำหรับทำ Tooltip (ข้อ 4) */
-        .tooltip { position: relative; display: inline-block; cursor: pointer; }
-        .tooltip .tooltiptext {
-            visibility: hidden; width: 220px; background-color: #334155; color: #fff;
-            text-align: center; border-radius: 6px; padding: 6px; position: absolute;
-            z-index: 10; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0;
-            transition: opacity 0.2s; font-size: 12px; font-weight: normal; line-height: 1.4;
-        }
-        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
-        
-        /* แอนิเมชัน Spinner สำหรับ Loading (ข้อ 2) */
-        .spinner {
-            border: 3px solid #f3f3f3; border-top: 3px solid #f97316;
-            border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;
-            display: inline-block; vertical-align: middle;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { font-family: 'Kanit', sans-serif; background-color: #f8fafc; -webkit-tap-highlight-color: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     </style>
+
+    <!-- Firebase JS SDK (Compat version via CDN) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
-<body class="text-gray-800">
+<body class="text-slate-800 antialiased pb-12">
 
-    <nav class="bg-orange-500 text-white p-4 shadow-lg sticky top-0 z-50">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold">📊 Ma Kin Tokyo Dashboard</h1>
-            <div id="syncStatus" class="text-sm bg-orange-600 px-3 py-1 rounded-full">เชื่อมต่อ Firestore แล้ว</div>
-        </div>
-    </nav>
-
-    <main class="container mx-auto p-4 md:p-8">
-        
-        <section class="bg-white p-6 rounded-2xl shadow-sm mb-8">
-            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
-                <h3 class="text-lg font-bold text-gray-700 flex items-center gap-2">
-                    📅 สรุปยอดขายรายเดือน (ย้อนหลัง)
-                </h3>
-                <div class="flex items-center gap-4">
-                    <button id="exportCsvBtn" onclick="exportMonthlyToCSV()" class="hidden text-xs bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-emerald-600 shadow-sm transition-all">
-                        📥 ดาวน์โหลดข้อมูล (CSV)
-                    </button>
-
-                    <button id="toggleMonthlyBtn" onclick="toggleMonthlyView()" class="hidden text-sm font-bold text-orange-500 hover:text-orange-600">
-                        ดูทั้งหมด ➔
-                    </button>
-                </div>
+    <!-- Loading Overlay Screen -->
+    <div id="loadingOverlay" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-xs text-center space-y-4">
+            <div class="w-14 h-14 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto text-2xl animate-bounce">
+                <i class="fa-solid fa-store"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-semibold text-slate-800" id="loadingStatusText">กำลังโหลดข้อมูลบิล...</h3>
+                <p class="text-xs text-slate-400 mt-0.5">ร้านมากินโตเกียว</p>
             </div>
             
-            <div class="overflow-x-auto">
-                <table class="w-full text-left min-w-[700px]">
-                    <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-    <tr>
-        <th class="p-3 w-[20%]">เดือน</th>
-        <th class="p-3 text-right w-[20%]">ยอดขาย</th>
-        <th class="p-3 text-center w-[20%]">จำนวนบิล</th>
-        <th class="p-3 text-center w-[15%]">จำนวนชิ้น</th>
-        <th class="p-3 w-[25%]">ไส้ที่ขายดีที่สุด</th>
-    </tr>
-</thead>
-                    <tbody id="monthlySummaryTable" class="divide-y divide-gray-100 text-sm">
-                        <tr>
-                            <td colspan="6" class="text-center p-8 text-orange-500 font-medium">
-                                <div class="spinner mr-2"></div> กำลังคำนวณยอดรายเดือนย้อนหลังจากคลาวด์...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <hr class="my-8 border-gray-200">
-
-        <section class="bg-white p-4 rounded-xl shadow-sm mb-8 flex flex-wrap gap-4 items-end">
-            <div class="flex-1 min-w-[200px]">
-                <label class="block text-sm font-medium text-gray-600 mb-1">เลือกช่วงเวลาแสดงผลด้านล่าง</label>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <button onclick="setDateRange('today')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">วันนี้</button>
-                    <button onclick="setDateRange('yesterday')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">เมื่อวาน</button>
-                    <button onclick="setDateRange('week')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">สัปดาห์นี้</button>
-                    <button onclick="setDateRange('month')" class="bg-gray-100 hover:bg-orange-100 p-2 rounded text-sm">เดือนนี้</button>
+            <!-- Progress Bar Container -->
+            <div class="space-y-1.5">
+                <div class="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
+                    <div id="progressBar" class="bg-gradient-to-r from-amber-500 to-orange-600 h-full rounded-full transition-all duration-200 ease-out" style="width: 0%"></div>
                 </div>
-            </div>
-            <div class="flex gap-2 w-full md:w-auto">
-                <input type="date" id="startDate" class="border p-2 rounded text-sm w-full">
-                <input type="date" id="endDate" class="border p-2 rounded text-sm w-full">
-                <button onclick="fetchData()" class="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600">ดึงข้อมูล</button>
-            </div>
-        </section>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-orange-500">
-                <p class="text-gray-500 text-sm">ยอดขายช่วงที่เลือก</p>
-                <h2 id="totalRevenue" class="text-3xl font-bold text-orange-600">฿0</h2>
-            </div>
-            <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-blue-500">
-                <p class="text-gray-500 text-sm">จำนวนบิลช่วงที่เลือก</p>
-                <h2 id="totalBills" class="text-3xl font-bold text-blue-600">0 บิล</h2>
-            </div>
-            <div class="stat-card bg-white p-6 rounded-2xl shadow-sm border-l-4 border-green-500">
-                <p class="text-gray-500 text-sm">ไส้ที่ขายดีช่วงที่เลือก</p>
-                <h2 id="bestSeller" class="text-2xl font-bold text-green-600">-</h2>
+                <div class="flex justify-between items-center text-xs font-semibold px-1">
+                    <span class="text-slate-400 font-normal text-[11px]">สถานะการประมวลผล</span>
+                    <span class="text-orange-600"><span id="progressText">0</span>%</span>
+                </div>
             </div>
         </div>
+    </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-2">
-                <div class="flex border-b mb-6 bg-white rounded-t-xl overflow-hidden">
-                    <button onclick="switchView('bills')" id="tabBills" class="flex-1 py-3 px-4 font-bold active-tab transition-all">
-                        📝 รายการบิล
-                    </button>
-                    <button onclick="switchView('summary')" id="tabSummary" class="flex-1 py-3 px-4 font-bold text-gray-500 hover:text-orange-500 transition-all">
-                        🥙 สรุปตามไส้
-                    </button>
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+            <div class="bg-white text-orange-600 w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-inner">
+                <i class="fa-solid fa-store text-sm"></i>
+            </div>
+            <div>
+                <h1 class="text-md font-semibold leading-none">มากินโตเกียว</h1>
+                <p class="text-xs text-amber-100 mt-0.5">ระบบสรุปยอดออเดอร์ (Firebase)</p>
+            </div>
+        </div>
+        <button onclick="loadDashboardData()" class="p-2 hover:bg-orange-700/30 rounded-full transition active:scale-95">
+            <i id="refreshIcon" class="fa-solid fa-rotate text-lg"></i>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 mt-5 grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left Column -->
+        <div class="md:col-span-5 lg:col-span-4 space-y-6">
+            
+            <!-- Monthly Summary Card -->
+            <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-medium text-slate-500 flex items-center gap-1.5">
+                        <i class="fa-regular fa-calendar-list text-orange-500"></i> สรุปรายเดือนล่าสุด
+                    </h2>
+                    <span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">ภาพรวมระบบ</span>
                 </div>
+                <div id="monthlyContainer" class="space-y-2.5">
+                    <div class="text-center py-6 text-slate-400 text-xs">กำลังโหลดข้อมูลรายเดือน...</div>
+                </div>
+                <button id="toggleMonthBtn" onclick="toggleMonthsVisibility()" class="hidden w-full mt-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium rounded-xl border border-slate-200/60 transition flex items-center justify-center gap-1">
+                    <span>ดูเดือนที่เหลือทั้งหมด</span> <i id="toggleMonthIcon" class="fa-solid fa-chevron-down text-[10px]"></i>
+                </button>
+            </section>
 
-                <div id="billView">
-                    <h3 class="text-lg font-bold mb-4 flex items-center">
-                        รายการบิล <span id="billCountLabel" class="ml-2 text-sm font-normal text-gray-400"></span>
-                    </h3>
-                    <div id="billContainer" class="space-y-4">
-                        <p class="text-gray-400 italic text-center p-10">กรุณากดปุ่ม "ดึงข้อมูล"</p>
+            <!-- Time Filter Buttons -->
+            <section class="space-y-3">
+                <div class="flex overflow-x-auto gap-2 pb-1 custom-scrollbar snap-x">
+                    <button onclick="changeTimeRange('today')" id="btn-today" class="range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 shadow-sm transition active:scale-95">วันนี้</button>
+                    <button onclick="changeTimeRange('yesterday')" id="btn-yesterday" class="range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 shadow-sm transition active:scale-95">เมื่อวาน</button>
+                    <button onclick="changeTimeRange('thisWeek')" id="btn-thisWeek" class="range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-orange-500 border border-orange-500 text-white shadow-sm transition active:scale-95">สัปดาห์นี้</button>
+                    <button onclick="changeTimeRange('thisMonth')" id="btn-thisMonth" class="range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 shadow-sm transition active:scale-95">เดือนนี้</button>
+                    <button onclick="changeTimeRange('custom')" id="btn-custom" class="range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 shadow-sm transition active:scale-95"><i class="fa-solid fa-sliders mr-1"></i>เลือกวันเอง</button>
+                </div>
+                <div id="customDateBox" class="hidden bg-amber-50/60 border border-amber-200 rounded-2xl p-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-[11px] text-slate-500 font-medium block mb-1">วันที่เริ่มต้น</label>
+                            <input type="date" id="startDate" onchange="processFilteredData()" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-orange-500">
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-slate-500 font-medium block mb-1">วันที่สิ้นสุด</label>
+                            <input type="date" id="endDate" onchange="processFilteredData()" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-orange-500">
+                        </div>
                     </div>
                 </div>
+            </section>
 
-                <div id="summaryView" class="hidden">
-                    <h3 class="text-lg font-bold mb-4">🥙 รายงานสรุปยอดตามไส้</h3>
-                    <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-                        <table class="w-full text-left">
-                            <thead class="bg-gray-50 text-gray-600 text-sm">
-                                <tr>
-                                    <th class="p-4">ชื่อไส้ / รายการ</th>
-                                    <th class="p-4 text-center">จำนวน (ชิ้น)</th>
-                                    <th class="p-4 text-right">ยอดรวม (บาท)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="fillingSummaryTable" class="divide-y divide-gray-100"></tbody>
-                        </table>
+            <!-- Key Metrics Cards -->
+            <section class="grid grid-cols-2 gap-3">
+                <div class="bg-gradient-to-br from-orange-500 to-amber-500 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden col-span-2">
+                    <div class="absolute -right-4 -bottom-4 text-orange-600/20 text-7xl font-bold"><i class="fa-solid fa-baht-sign"></i></div>
+                    <p class="text-xs text-orange-100 font-medium">ยอดขายรวมช่วงที่เลือก</p>
+                    <p class="text-2xl font-semibold mt-1 tracking-wide"><span id="metricSales">0.00</span> <span class="text-sm font-normal text-orange-100">บาท</span></p>
+                </div>
+                <div class="bg-white border border-slate-100 rounded-2xl p-3.5 shadow-sm">
+                    <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">จำนวนบิลทั้งหมด</p>
+                    <div class="flex items-baseline justify-between mt-1">
+                        <p class="text-xl font-semibold text-slate-700" id="metricBills">0</p>
+                        <span class="text-xs text-slate-400">ออเดอร์</span>
                     </div>
                 </div>
-            </div>
+                <div class="bg-white border border-slate-100 rounded-2xl p-3.5 shadow-sm flex flex-col justify-between">
+                    <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">ไส้ขายดีที่สุดช่วงนี้</p>
+                    <p class="text-sm font-semibold text-amber-600 mt-1.5 truncate" id="metricBestItem">-</p>
+                </div>
+            </section>
+        </div>
 
-            <div class="space-y-8">
-                <div class="bg-white p-6 rounded-2xl shadow-sm">
-                    <h3 class="font-bold mb-4 border-b pb-2 text-orange-600">🏆 Top 10 ไส้ขายดี (ช่วงที่เลือก)</h3>
-                    <div id="fillingRank" class="space-y-3"></div>
+        <!-- Right Column (Tabs & List View) -->
+        <div class="md:col-span-7 lg:col-span-8 space-y-6">
+            <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="flex border-b border-slate-100 bg-slate-50/60 font-medium">
+                    <button id="tabBtn-bills" onclick="switchListTab('bills')" class="flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-receipt"></i> รายการบิล (<span id="billCountBadge">0</span>)
+                    </button>
+                    <button id="tabBtn-fillings" onclick="switchListTab('fillings')" class="flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-orange-500 text-orange-600 transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-fire text-amber-500"></i> อันดับไส้ขายดี
+                    </button>
                 </div>
-                
-                <div class="bg-white p-6 rounded-2xl shadow-sm">
-                    <h3 class="font-bold mb-4 border-b pb-2 text-blue-600">📊 สัดส่วนรายได้</h3>
-                    <canvas id="revenueChart"></canvas>
+
+                <div id="listContainer" class="divide-y divide-slate-100 max-h-[420px] md:max-h-[620px] overflow-y-auto custom-scrollbar">
+                    <div class="text-center py-8 text-slate-400 text-xs">ไม่มีข้อมูลที่จะแสดงผล</div>
                 </div>
-            </div>
+            </section>
         </div>
     </main>
 
-    <script type="module">
-        // 1. รวมคำสั่ง import ทุกอย่างไว้ที่หัวแถวที่เดียว ไม่มีคำซ้ำแน่นอนครับ
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { 
-            getFirestore, 
-            collection, 
-            query, 
-            where, 
-            getDocs, 
-            orderBy, 
-            doc, 
-            updateDoc, 
-            writeBatch, 
-            serverTimestamp 
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCx6SGBBh979y6cjyOL75f5PdSr8AZkz0g",
-            authDomain: "tokyo-order-app.firebaseapp.com",
-            projectId: "tokyo-order-app",
-            storageBucket: "tokyo-order-app.appspot.com",
-            messagingSenderId: "411815226779", 
-            appId: "1:411815226779:web:373e1ca32daaac264cc53e"             
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        let lastFetchedBills = []; 
-        let monthlyDataCache = []; 
-        let showAllMonths = false;  
-
-
-        // --- 📅 ดึงข้อมูลทำสรุปรายเดือนอิสระจากคอลเลกชันใหม่ ---
-        async function fetchMonthlySummaryOnly() {
-            try {
-                const q = query(collection(db, "monthly_stats"), orderBy("monthKey", "desc"));
-                const snap = await getDocs(q);
-                
-                let tempArray = snap.docs.map(doc => {
-                    const data = doc.data();
-                    const dateObj = new Date(data.monthKey + "-02");
-                    const formattedMonth = dateObj.toLocaleDateString('th-TH', { month: 'short', year: 'numeric' });
-
-                    return { 
-                        month: formattedMonth, 
-                        monthKey: data.monthKey, 
-                        revenue: data.revenue || 0,
-                        billsCount: data.billsCount || 0,
-                        piecesCount: data.piecesCount || 0,
-                        bestSeller: data.bestSeller || '-',
-                        growthStr: '-' 
-                    };
-                }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
-
-                for (let i = 0; i < tempArray.length; i++) {
-                    if (i > 0) {
-                        const prevRevenue = tempArray[i - 1].revenue;
-                        const currRevenue = tempArray[i].revenue;
-                        if (prevRevenue > 0) {
-                            const growth = ((currRevenue - prevRevenue) / prevRevenue) * 100;
-                            if (growth > 0) {
-                                tempArray[i].growthStr = `<span class="text-emerald-600 font-bold">▲ ${growth.toFixed(1)}%</span>`;
-                            } else if (growth < 0) {
-                                tempArray[i].growthStr = `<span class="text-red-500 font-bold">▼ ${Math.abs(growth).toFixed(1)}%</span>`;
-                            } else {
-                                tempArray[i].growthStr = `<span class="text-gray-500">0.0%</span>`;
-                            }
-                        }
-                    }
-                }
-
-                monthlyDataCache = tempArray.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-                renderMonthlyTable();
-            } catch (err) {
-                console.error("Monthly Error:", err);
-                document.getElementById('monthlySummaryTable').innerHTML = `<tr><td colspan="5" class="text-center p-4 text-red-500">ไม่สามารถโหลดข้อมูลรายเดือนได้: ${err.message}</td></tr>`;
-            }
-        }
-
-        function renderMonthlyTable() {
-            const tableBody = document.getElementById('monthlySummaryTable');
-            const toggleBtn = document.getElementById('toggleMonthlyBtn');
-            const csvBtn = document.getElementById('exportCsvBtn');
-
-            if (!tableBody || monthlyDataCache.length === 0) {
-                if(tableBody) tableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400 italic">ไม่พบข้อมูลยอดขายในระบบ</td></tr>';
-                if(csvBtn) csvBtn.classList.add('hidden');
-                return;
-            }
-
-            if(csvBtn) csvBtn.classList.remove('hidden');
-
-            const displayData = showAllMonths ? monthlyDataCache : monthlyDataCache.slice(0, 4);
-            
-            if (monthlyDataCache.length > 4) {
-                if(toggleBtn) {
-                    toggleBtn.classList.remove('hidden');
-                    toggleBtn.innerText = showAllMonths ? '💡 แสดงน้อยลง' : `ดูทั้งหมด (${monthlyDataCache.length}) ➔`;
-                }
-            } else {
-                if(toggleBtn) toggleBtn.classList.add('hidden');
-            }
-
-            tableBody.innerHTML = displayData.map(d => {
-                let growthBadge = '';
-                if (d.growthStr && d.growthStr !== '-') {
-                    growthBadge = ` <span class="text-xs font-normal">${d.growthStr}</span>`;
-                }
-
-                return `
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="p-3 font-semibold text-gray-700 w-[20%]">${d.month}${growthBadge}</td>
-                        <td class="p-3 text-right font-bold text-orange-600 w-[20%]">฿${d.revenue.toLocaleString()}</td>
-                        <td class="p-3 text-center text-blue-600 font-medium w-[20%]">${d.billsCount.toLocaleString()} บิล</td>
-                        <td class="p-3 text-center text-green-600 font-medium w-[15%]">${d.piecesCount.toLocaleString()} ชิ้น</td>
-                        <td class="p-3 text-gray-600 w-[25%] max-w-[180px]">
-                            <div class="tooltip truncate w-full" title="${d.bestSeller}">
-                                ${d.bestSeller}
-                                <span class="tooltiptext">${d.bestSeller}</span>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        window.toggleMonthlyView = () => {
-            showAllMonths = !showAllMonths;
-            renderMonthlyTable();
-        };
-
-        window.exportMonthlyToCSV = () => {
-            if (monthlyDataCache.length === 0) return alert('ไม่มีข้อมูลสำหรับดาวน์โหลด');
-            let csvContent = "\uFEFF"; 
-            csvContent += "เดือน,ยอดขาย(บาท),จำนวนบิล,จำนวนชิ้น,ไส้ที่ขายดีที่สุด\n";
-            
-            monthlyDataCache.forEach(d => {
-                const cleanBestSeller = d.bestSeller.replace(/,/g, ' '); 
-                csvContent += `${d.month},${d.revenue},${d.billsCount},${d.piecesCount},${cleanBestSeller}\n`;
-            });
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", `รายงานรายเดือน_MaKinTokyo_${new Date().toISOString().substring(0,10)}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
-
-        // --- 🔍 ฟังก์ชันกรองปฏิทินของเดิม ---
-        window.fetchData = async () => {
-            const start = document.getElementById('startDate').value;
-            const end = document.getElementById('endDate').value;
-            const container = document.getElementById('billContainer');
-            
-            if (!start || !end) return alert('กรุณาเลือกวันที่');
-            container.innerHTML = '<div class="text-center p-10 text-orange-500"><div class="spinner mr-2"></div> กำลังดึงข้อมูลช่วงที่เลือก...</div>';
-
-            try {
-                const q = query(
-                    collection(db, "bills"),
-                    where("date", ">=", start),
-                    where("date", "<=", end),
-                    orderBy("date", "desc")
-                );
-
-                const snap = await getDocs(q);
-                lastFetchedBills = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                
-                processAnalytics(lastFetchedBills);
-                renderBillCards(lastFetchedBills);
-                renderFillingSummary(); 
-            } catch (err) {
-                console.error(err);
-                container.innerHTML = `<div class="text-red-500 italic p-10 text-center">เกิดข้อผิดพลาด: ${err.message}</div>`;
-            }
-        };
-
-        function processAnalytics(bills) {
-            let totalRevenue = 0;
-            let fillingMap = {};
-            let currentMonthKey = new Date().toISOString().substring(0, 7);
-            let isCurrentMonthSelected = false;
-
-            bills.forEach(bill => {
-                if (bill.date && bill.date.substring(0, 7) === currentMonthKey) {
-                    isCurrentMonthSelected = true;
-                }
-                bill.pieces.forEach(p => {
-                    const qty = parseInt(p.qty || 1);
-                    const price = parseInt(p.price || 0);
-                    totalRevenue += (price * qty);
-
-                    const fillingName = p.items.join('+');
-                    fillingMap[fillingName] = (fillingMap[fillingName] || 0) + qty;
-                });
-            });
-
-            document.getElementById('totalRevenue').innerText = `฿${totalRevenue.toLocaleString()}`;
-            document.getElementById('totalBills').innerText = `${bills.length} บิล`;
-            document.getElementById('billCountLabel').innerText = `(${bills.length})`;
-
-            const sortedFillings = Object.entries(fillingMap).sort((a, b) => b[1] - a[1]);
-            const best = sortedFillings[0] ? `${sortedFillings[0][0]} (${sortedFillings[0][1]} ชิ้น)` : '-';
-            document.getElementById('bestSeller').innerText = best;
-
-            const rankDiv = document.getElementById('fillingRank');
-            if(rankDiv) {
-                rankDiv.innerHTML = sortedFillings.slice(0, 10).map(([name, qty], i) => `
-                    <div class="flex justify-between items-center text-sm p-1 border-b border-gray-50 last:border-0">
-                        <span class="text-gray-600 truncate mr-2">${i+1}. ${name}</span>
-                        <span class="font-bold text-orange-600">${qty}</span>
-                    </div>
-                `).join('');
-            }
-
-            // แอบส่งข้อมูลไส้ขายดีกลับไปอัพเดตรายเดือนเงียบๆ
-            if (isCurrentMonthSelected && sortedFillings[0]) {
-                const correctBestSeller = `${sortedFillings[0][0]} (${sortedFillings[0][1]} ชิ้น)`;
-                const monthlyRef = doc(db, "monthly_stats", currentMonthKey);
-                
-                updateDoc(monthlyRef, { bestSeller: correctBestSeller }).then(() => {
-                    const currentMonthData = monthlyDataCache.find(d => d.monthKey === currentMonthKey);
-                    if (currentMonthData) {
-                        currentMonthData.bestSeller = correctBestSeller;
-                        renderMonthlyTable();
-                    }
-                }).catch(err => console.error("Auto-update failed:", err));
-            }
-        }
-
-        function renderBillCards(bills) {
-            const container = document.getElementById('billContainer');
-            if (!container) return;
-            if (bills.length === 0) {
-                container.innerHTML = '<p class="text-center p-10 text-gray-400">ไม่พบข้อมูลบิลในช่วงเวลานี้</p>';
-                return;
-            }
-
-            container.innerHTML = bills.map(b => `
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:border-orange-200 transition-colors">
-                    <div class="flex justify-between items-start mb-2">
-                        <div>
-                            <span class="text-xs font-bold text-orange-500 uppercase tracking-wider">${b.date} | ${b.time || ''}</span>
-                            <h4 class="font-bold text-lg">คิวที่ #${b.billNo}</h4>
-                        </div>
-                        <span class="bg-orange-50 text-orange-600 text-xs px-3 py-1 rounded-full font-bold">
-                            ${b.pieces.reduce((s,p)=> s + (p.qty||1), 0)} ชิ้น
-                        </span>
-                    </div>
-                    <div class="text-sm text-gray-600 space-y-1 pl-2 border-l-2 border-gray-100">
-                        ${b.pieces.map(p => `<div>• ${p.items.join('+')} <span class="text-gray-400 ml-1">x${p.qty}</span></div>`).join('')}
-                    </div>
-                    ${b.note ? `<div class="mt-3 text-xs text-blue-600 italic bg-blue-50 p-2 rounded-lg">📝 ${b.note}</div>` : ''}
+    <!-- Modal Order Details -->
+    <div id="detailsModal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-end md:items-center justify-center p-4 transition-all">
+        <div class="bg-white w-full max-w-md rounded-t-3xl md:rounded-2xl p-5 shadow-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                    <h3 class="text-md font-semibold text-slate-800" id="modalBillId">คิวที่ --</h3>
+                    <p class="text-xs text-slate-400 font-light" id="modalBillTime">เวลา --:-- น.</p>
                 </div>
-            `).join('');
+                <button onclick="closeModal()" class="w-8 h-8 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center hover:bg-slate-200">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar" id="modalItemsBody"></div>
+            <div class="bg-slate-50 rounded-xl p-3 flex justify-between items-center font-medium text-sm">
+                <span class="text-slate-500">ราคารวมทั้งสิ้น</span>
+                <span class="text-orange-600 font-semibold text-base" id="modalTotalAmount">0 บาท</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Script & App Logic -->
+    <script>
+        // Config Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAC6NW0BCQMdmoN0GwNNImM1PWzJ_YXebo",
+            authDomain: "makin-tokyo-order-firebase.firebaseapp.com",
+            projectId: "makin-tokyo-order-firebase",
+            storageBucket: "makin-tokyo-order-firebase.firebasestorage.app",
+            messagingSenderId: "859009945773",
+            appId: "1:859009945773:web:4f58ab01a38f9203387624"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // Global Variables
+        let RAW_DATA = { monthly: [], orders: [], details: [] };
+        let showAllMonths = false;
+        let currentRangeType = 'thisWeek';
+        let currentListTab = 'fillings';
+        
+        let cachedFilteredOrders = [];
+        let cachedFilteredFillings = [];
+
+        // Progress Bar
+        let progressInterval = null;
+        let currentProgress = 0;
+
+        function startLoadingProgress() {
+            const overlay = document.getElementById('loadingOverlay');
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('progressText');
+            const statusText = document.getElementById('loadingStatusText');
+
+            if (statusText) statusText.innerText = "กำลังเชื่อมต่อ Firebase...";
+            
+            overlay.classList.remove('hidden');
+            setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+            
+            currentProgress = 0;
+            if (bar) bar.style.width = '0%';
+            if (text) text.innerText = '0';
+
+            clearInterval(progressInterval);
+            
+            progressInterval = setInterval(() => {
+                if (currentProgress < 92) {
+                    let increment = Math.max(1, Math.floor((92 - currentProgress) / 7));
+                    currentProgress += increment;
+                    if (currentProgress > 92) currentProgress = 92;
+                    
+                    if (bar) bar.style.width = currentProgress + '%';
+                    if (text) text.innerText = currentProgress;
+                }
+            }, 100);
         }
 
-        function renderFillingSummary() {
-            const tableBody = document.getElementById('fillingSummaryTable');
-            if(!tableBody) return;
-            let fillingStats = {};
+        function finishLoadingProgress(callback) {
+            clearInterval(progressInterval);
+            currentProgress = 100;
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('progressText');
+            const overlay = document.getElementById('loadingOverlay');
 
-            lastFetchedBills.forEach(bill => {
-                bill.pieces.forEach(p => {
-                    const name = p.items.join('+');
-                    const qty = parseInt(p.qty || 1);
-                    const price = parseInt(p.price || 0);
-                    
-                    if (!fillingStats[name]) {
-                        fillingStats[name] = { qty: 0, revenue: 0 };
+            if (bar) bar.style.width = '100%';
+            if (text) text.innerText = '100';
+
+            setTimeout(() => {
+                overlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    if (callback) callback();
+                }, 300);
+            }, 350);
+        }
+
+        function failLoadingProgress() {
+            clearInterval(progressInterval);
+            const statusText = document.getElementById('loadingStatusText');
+            if (statusText) statusText.innerText = "เกิดข้อผิดพลาดในการดึงข้อมูล";
+            
+            setTimeout(() => {
+                document.getElementById('loadingOverlay').classList.add('opacity-0');
+                setTimeout(() => {
+                    document.getElementById('loadingOverlay').classList.add('hidden');
+                }, 300);
+            }, 1000);
+        }
+
+        // ดึงข้อมูลจาก Firebase Firestore Collection 'orders'
+        async function loadDashboardData() {
+            const icon = document.getElementById('refreshIcon');
+            if (icon) icon.classList.add('fa-spin');
+            
+            startLoadingProgress();
+            
+            try {
+                const snapshot = await db.collection('orders').get();
+                const fetchedOrders = [];
+                const fetchedDetails = [];
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const orderId = doc.id;
+
+                    // แปลงแปลงรูปแบบ วันที่/เวลา
+                    let dateStr = data.date || '';
+                    let timeStr = data.time || '00:00';
+
+                    if (data.createdAt && data.createdAt.toDate) {
+                        const dt = data.createdAt.toDate();
+                        dateStr = dt.toISOString().split('T')[0];
+                        timeStr = dt.toTimeString().substring(0, 5);
+                    } else if (data.timestamp && data.timestamp.toDate) {
+                        const dt = data.timestamp.toDate();
+                        dateStr = dt.toISOString().split('T')[0];
+                        timeStr = dt.toTimeString().substring(0, 5);
                     }
-                    fillingStats[name].qty += qty;
-                    fillingStats[name].revenue += (price * qty);
+
+                    const orderObj = {
+                        id: orderId,
+                        queue: data.queue || '-',
+                        date: dateStr,
+                        time: timeStr,
+                        totalAmount: Number(data.totalAmount || data.total || 0),
+                        status: data.status || 'done'
+                    };
+                    fetchedOrders.push(orderObj);
+
+                    // ดึงรายการไส้ในบิล (รองรับทั้ง Array ของ items หรือ details)
+                    const itemsList = data.items || data.details || [];
+                    itemsList.forEach(item => {
+                        fetchedDetails.push({
+                            billId: orderId,
+                            filling: item.filling || item.name || item.title || 'ไส้รวม',
+                            qty: Number(item.qty || item.quantity || 1),
+                            pricePerPiece: Number(item.pricePerPiece || item.price || 0),
+                            total: Number(item.total || ((item.qty || 1) * (item.pricePerPiece || item.price || 0)))
+                        });
+                    });
                 });
+
+                RAW_DATA.orders = fetchedOrders;
+                RAW_DATA.details = fetchedDetails;
+                RAW_DATA.monthly = calculateMonthlySummary(fetchedOrders, fetchedDetails);
+
+                if (icon) icon.classList.remove('fa-spin');
+
+                finishLoadingProgress(function() {
+                    renderMonthlySummary();
+                    changeTimeRange(currentRangeType);
+                });
+
+            } catch (error) {
+                console.error("Firebase fetch error:", error);
+                if (icon) icon.classList.remove('fa-spin');
+                failLoadingProgress();
+                alert('ไม่สามารถดึงข้อมูลจาก Firebase ได้: ' + error.message);
+            }
+        }
+
+        // คำนวณสรุปรายเดือนจากข้อมูลออเดอร์ในระบบ
+        function calculateMonthlySummary(orders, details) {
+            const monthlyMap = {};
+
+            orders.forEach(order => {
+                if (!order.date) return;
+                const d = new Date(order.date);
+                if (isNaN(d.getTime())) return;
+
+                const year = d.getFullYear();
+                const month = d.getMonth() + 1;
+                const key = `${year}-${month}`;
+
+                if (!monthlyMap[key]) {
+                    monthlyMap[key] = { year, month, bills: 0, pieces: 0, total: 0, fillingCounts: {} };
+                }
+
+                if (order.status === 'done' || order.status === 'completed' || !order.status) {
+                    monthlyMap[key].bills += 1;
+                    monthlyMap[key].total += Number(order.totalAmount || 0);
+
+                    const orderDetails = details.filter(item => item.billId === order.id);
+                    orderDetails.forEach(item => {
+                        const qty = Number(item.qty || 0);
+                        monthlyMap[key].pieces += qty;
+                        const fName = item.filling;
+                        if (fName) {
+                            monthlyMap[key].fillingCounts[fName] = (monthlyMap[key].fillingCounts[fName] || 0) + qty;
+                        }
+                    });
+                }
             });
 
-            const sorted = Object.entries(fillingStats).sort((a, b) => b[1].qty - a[1].qty);
+            return Object.values(monthlyMap).map(m => {
+                let bestItem = '-';
+                let maxQty = 0;
+                for (let f in m.fillingCounts) {
+                    if (m.fillingCounts[f] > maxQty) {
+                        maxQty = m.fillingCounts[f];
+                        bestItem = `${f} (${maxQty} ชิ้น)`;
+                    }
+                }
+                return {
+                    year: m.year,
+                    month: m.month,
+                    bills: m.bills,
+                    pieces: m.pieces,
+                    total: m.total,
+                    bestItem: bestItem
+                };
+            });
+        }
 
-            if (sorted.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="3" class="p-10 text-center text-gray-400 italic">ไม่มีข้อมูลการขาย</td></tr>';
+        function renderMonthlySummary() {
+            const container = document.getElementById('monthlyContainer');
+            const toggleBtn = document.getElementById('toggleMonthBtn');
+            container.innerHTML = '';
+            
+            if(!RAW_DATA.monthly || RAW_DATA.monthly.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs">ไม่พบข้อมูลรายเดือน</div>';
                 return;
             }
 
-            tableBody.innerHTML = sorted.map(([name, stat]) => `
-                <tr class="hover:bg-gray-50 transition-colors">
-                    <td class="p-4 font-medium text-gray-700">${name}</td>
-                    <td class="p-4 text-center font-bold text-orange-600">${stat.qty.toLocaleString()}</td>
-                    <td class="p-4 text-right font-bold text-gray-800">฿${stat.revenue.toLocaleString()}</td>
-                </tr>
-            `).join('');
+            let sortedMonths = [...RAW_DATA.monthly].sort((a, b) => {
+                if(b.year !== a.year) return b.year - a.year;
+                return b.month - a.month;
+            });
+
+            if(sortedMonths.length > 5) {
+                toggleBtn.classList.remove('hidden');
+            } else {
+                toggleBtn.classList.add('hidden');
+            }
+
+            let displayMonths = showAllMonths ? sortedMonths : sortedMonths.slice(0, 3);
+
+            displayMonths.forEach(m => {
+                const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+                const card = document.createElement('div');
+                card.className = "flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs";
+                card.innerHTML = `
+                    <div class="font-medium text-slate-700">
+                        <span class="text-slate-400 font-normal mr-0.5">${m.year + 543}</span> ${monthNames[m.month]}
+                        <span class="block text-[10px] text-slate-400 font-normal mt-0.5"><i class="fa-solid fa-receipt"></i> ${m.bills} บิล / ${m.pieces} ชิ้น</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="font-semibold text-slate-800 text-sm">${Number(m.total).toLocaleString()} ฿</span>
+                        <span class="block text-[10px] text-amber-600 font-light max-w-[130px] truncate mt-0.5"><i class="fa-solid fa-crown text-[8px]"></i> ${m.bestItem || '-'}</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
         }
 
-        window.switchView = (view) => {
-            const billView = document.getElementById('billView');
-            const summaryView = document.getElementById('summaryView');
-            const tabBills = document.getElementById('tabBills');
-            const tabSummary = document.getElementById('tabSummary');
+        function toggleMonthsVisibility() {
+            showAllMonths = !showAllMonths;
+            document.getElementById('toggleMonthIcon').className = showAllMonths ? "fa-solid fa-chevron-up text-[10px]" : "fa-solid fa-chevron-down text-[10px]";
+            document.getElementById('toggleMonthBtn').querySelector('span').innerText = showAllMonths ? "ซ่อนเดือนที่เหลือ" : "ดูเดือนที่เหลือทั้งหมด";
+            renderMonthlySummary();
+        }
 
-            if(billView && summaryView && tabBills && tabSummary) {
-                if (view === 'bills') {
-                    billView.classList.remove('hidden');
-                    summaryView.classList.add('hidden');
-                    tabBills.classList.add('active-tab');
-                    tabSummary.classList.remove('active-tab');
-                    tabSummary.classList.add('text-gray-500');
-                } else {
-                    billView.classList.add('hidden');
-                    summaryView.classList.remove('hidden');
-                    tabSummary.classList.add('active-tab');
-                    tabBills.classList.remove('active-tab');
-                    tabBills.classList.add('text-gray-500');
-                    renderFillingSummary(); 
-                }
-            }
-        };
+        function changeTimeRange(type) {
+            currentRangeType = type;
+            document.querySelectorAll('.range-btn').forEach(btn => {
+                btn.className = "range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 shadow-sm transition active:scale-95";
+            });
+            document.getElementById(`btn-${type}`).className = "range-btn snap-center shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-orange-500 border border-orange-500 text-white shadow-sm transition active:scale-95";
 
-        window.setDateRange = (range) => {
-            const startInput = document.getElementById('startDate');
-            const endInput = document.getElementById('endDate');
+            const customBox = document.getElementById('customDateBox');
             const now = new Date();
             let start = new Date();
+            let end = new Date();
 
-            if (range === 'today') { }
-            else if (range === 'yesterday') { start.setDate(now.getDate() - 1); now.setDate(now.getDate() - 1); }
-            else if (range === 'week') { start.setDate(now.getDate() - now.getDay()); }
-            else if (range === 'month') { start.setDate(1); }
-
-            if(startInput && endInput) {
-                startInput.value = start.toISOString().split('T')[0];
-                endInput.value = now.toISOString().split('T')[0];
-                fetchData();
+            if (type === 'today') {
+                customBox.classList.add('hidden');
+            } else if (type === 'yesterday') {
+                customBox.classList.add('hidden');
+                start.setDate(now.getDate() - 1);
+                end.setDate(now.getDate() - 1);
+            } else if (type === 'thisWeek') {
+                customBox.classList.add('hidden');
+                const day = now.getDay(); 
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                start.setDate(diff);
+            } else if (type === 'thisMonth') {
+                customBox.classList.add('hidden');
+                start.setDate(1);
+            } else if (type === 'custom') {
+                customBox.classList.remove('hidden');
+                processFilteredData();
+                return;
             }
-        };
 
-        // --- รันครั้งแรกเมื่อโหลดเว็บ ---
-        fetchMonthlySummaryOnly();
-        window.setDateRange('month');
+            document.getElementById('startDate').value = start.toISOString().split('T')[0];
+            document.getElementById('endDate').value = end.toISOString().split('T')[0];
+            processFilteredData();
+        }
+
+        function processFilteredData() {
+            const startVal = document.getElementById('startDate').value;
+            const endVal = document.getElementById('endDate').value;
+            if(!startVal || !endVal) return;
+
+            const startDate = new Date(startVal);
+            startDate.setHours(0,0,0,0);
+            const endDate = new Date(endVal);
+            endDate.setHours(23,59,59,999);
+
+            let filteredOrders = RAW_DATA.orders.filter(order => {
+                if(!order.date) return false;
+                const orderDate = new Date(order.date);
+                return orderDate >= startDate && orderDate <= endDate && (order.status === 'done' || order.status === 'completed' || !order.status);
+            });
+
+            filteredOrders.sort((a,b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
+            cachedFilteredOrders = filteredOrders;
+
+            let itemCounts = {};
+            let itemRevenues = {};
+            let totalSales = 0;
+
+            filteredOrders.forEach(order => {
+                totalSales += Number(order.totalAmount || 0);
+                let matchedDetails = RAW_DATA.details.filter(d => d.billId === order.id);
+                matchedDetails.forEach(detail => {
+                    let itemName = detail.filling;
+                    let qty = Number(detail.qty || 0);
+                    let revenue = Number(detail.total || 0);
+                    
+                    itemCounts[itemName] = (itemCounts[itemName] || 0) + qty;
+                    itemRevenues[itemName] = (itemRevenues[itemName] || 0) + revenue;
+                });
+            });
+
+            let fillingsArray = [];
+            for (let item in itemCounts) {
+                fillingsArray.push({
+                    name: item,
+                    qty: itemCounts[item],
+                    revenue: itemRevenues[item] || 0
+                });
+            }
+
+            fillingsArray.sort((a, b) => {
+                if (b.qty !== a.qty) {
+                    return b.qty - a.qty;
+                }
+                return b.revenue - a.revenue;
+            });
+            cachedFilteredFillings = fillingsArray;
+
+            let bestItemStr = "-";
+            if (fillingsArray.length > 0) {
+                bestItemStr = `${fillingsArray[0].name} (${fillingsArray[0].qty} ชิ้น)`;
+            }
+
+            document.getElementById('metricSales').innerText = totalSales.toLocaleString('th-TH', { minimumFractionDigits: 2 });
+            document.getElementById('metricBills').innerText = filteredOrders.length;
+            document.getElementById('metricBestItem').innerText = bestItemStr;
+            document.getElementById('billCountBadge').innerText = filteredOrders.length;
+
+            if (currentListTab === 'bills') {
+                renderBillList(cachedFilteredOrders);
+            } else {
+                renderFillingList(cachedFilteredFillings);
+            }
+        }
+
+        function switchListTab(tab) {
+            currentListTab = tab;
+            const billsBtn = document.getElementById('tabBtn-bills');
+            const fillingsBtn = document.getElementById('tabBtn-fillings');
+
+            if (tab === 'bills') {
+                billsBtn.className = "flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-orange-500 text-orange-600 transition flex items-center justify-center gap-1.5";
+                fillingsBtn.className = "flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition flex items-center justify-center gap-1.5";
+                renderBillList(cachedFilteredOrders);
+            } else {
+                fillingsBtn.className = "flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-orange-500 text-orange-600 transition flex items-center justify-center gap-1.5";
+                billsBtn.className = "flex-1 py-3 text-center text-xs font-semibold tracking-wider border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition flex items-center justify-center gap-1.5";
+                renderFillingList(cachedFilteredFillings);
+            }
+        }
+
+        function renderBillList(orders) {
+            const container = document.getElementById('listContainer');
+            container.innerHTML = '';
+
+            if(orders.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">ไม่มีข้อมูลบิลในช่วงเวลานี้</div>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const row = document.createElement('div');
+                row.className = "p-3.5 hover:bg-slate-50/80 active:bg-slate-100/70 transition flex items-center justify-between cursor-pointer";
+                row.setAttribute('onclick', `openBillDetails('${order.id}', '${order.queue}', '${order.time}', ${order.totalAmount})`);
+                
+                let d = new Date(order.date);
+                let formattedDate = isNaN(d.getTime()) ? order.date : `${d.getDate()}/${d.getMonth()+1}`;
+
+                row.innerHTML = `
+                    <div class="space-y-0.5">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-amber-100 text-amber-800 text-[11px] font-bold px-1.5 py-0.5 rounded-md">คิวที่ ${order.queue}</span>
+                            <span class="text-xs font-medium text-slate-700">${order.time} น.</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 font-light"><i class="fa-regular fa-clock text-[9px]"></i> วันที่ ${formattedDate} | รหัสบิล: ${order.id.substring(0,8)}...</p>
+                    </div>
+                    <div class="flex items-center gap-2 text-right">
+                        <div>
+                            <span class="font-semibold text-slate-800 text-sm">${Number(order.totalAmount).toLocaleString()} ฿</span>
+                            <span class="block text-[9px] text-emerald-500 font-medium"><i class="fa-solid fa-circle-check text-[7px]"></i> สำเร็จ</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-xs text-slate-300 pl-1"></i>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function renderFillingList(fillings) {
+            const container = document.getElementById('listContainer');
+            container.innerHTML = '';
+
+            if(fillings.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">ไม่มีข้อมูลรายการไส้ในช่วงเวลานี้</div>';
+                return;
+            }
+
+            const maxQty = Math.max(...fillings.map(f => f.qty)) || 1;
+
+            fillings.forEach((item, index) => {
+                const row = document.createElement('div');
+                row.className = "p-4 hover:bg-slate-50/50 transition flex items-center justify-between gap-4";
+                
+                let rankBadge = "";
+                if (index === 0) {
+                    rankBadge = `<div class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-sm"><i class="fa-solid fa-crown text-[9px]"></i></div>`;
+                } else if (index === 1) {
+                    rankBadge = `<div class="w-6 h-6 rounded-full bg-slate-400 text-white flex items-center justify-center font-bold text-xs shadow-sm">2</div>`;
+                } else if (index === 2) {
+                    rankBadge = `<div class="w-6 h-6 rounded-full bg-amber-700/70 text-white flex items-center justify-center font-bold text-xs shadow-sm">3</div>`;
+                } else {
+                    rankBadge = `<div class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-semibold text-xs">${index + 1}</div>`;
+                }
+
+                const percentage = (item.qty / maxQty) * 100;
+
+                row.innerHTML = `
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        ${rankBadge}
+                        <div class="flex-1 min-w-0 space-y-1">
+                            <div class="flex justify-between items-baseline">
+                                <p class="font-medium text-slate-700 text-xs truncate">${item.name}</p>
+                                <p class="text-[11px] font-semibold text-slate-600">${item.qty} ชิ้น</p>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-amber-400 to-orange-500 h-full rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <span class="text-xs font-semibold text-slate-800">${Number(item.revenue).toLocaleString()} ฿</span>
+                        <span class="block text-[9px] text-slate-400 font-light">รวมเงินไส้นี้</span>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function openBillDetails(billId, queue, time, totalAmount) {
+            document.getElementById('modalBillId').innerText = `คิวที่ ${queue} (บิล: ${billId.substring(0,8)}...)`;
+            document.getElementById('modalBillTime').innerText = `เวลาซื้อ: ${time} น.`;
+            document.getElementById('modalTotalAmount').innerText = `${Number(totalAmount).toLocaleString()} บาท`;
+
+            const itemsBody = document.getElementById('modalItemsBody');
+            itemsBody.innerHTML = '';
+
+            let matchedDetails = RAW_DATA.details.filter(d => d.billId === billId);
+
+            if(matchedDetails.length === 0) {
+                itemsBody.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">ไม่พบรายการไส้ในบิลนี้</p>';
+            } else {
+                matchedDetails.forEach(d => {
+                    const div = document.createElement('div');
+                    div.className = "flex justify-between items-center bg-slate-50 rounded-xl p-2.5 text-xs border border-slate-100";
+                    div.innerHTML = `
+                        <div>
+                            <p class="font-medium text-slate-800">${d.filling}</p>
+                            <p class="text-[10px] text-slate-400 font-light">ราคาชิ้นละ ${d.pricePerPiece} ฿</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-semibold text-slate-700">x ${d.qty}</p>
+                            <p class="text-[10px] text-orange-500 font-medium">= ${d.total} ฿</p>
+                        </div>
+                    `;
+                    itemsBody.appendChild(div);
+                });
+            }
+
+            document.getElementById('detailsModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detailsModal').classList.add('hidden');
+        }
+
+        window.onload = function() {
+            loadDashboardData();
+        };
     </script>
 </body>
 </html>

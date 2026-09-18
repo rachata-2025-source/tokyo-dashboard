@@ -195,6 +195,23 @@
         let progressInterval = null;
         let currentProgress = 0;
 
+        // --- Helper Functions สำหรับแปลง Date ให้รองรับ Safari (iOS / iPad) ---
+        function parseDateTime(dateStr, timeStr = '00:00') {
+            if (!dateStr) return new Date(0);
+            // เปลี่ยน - เป็น / เพื่อให้ iOS Safari อ่าน Date ได้สมบูรณ์
+            const formattedDate = dateStr.replace(/-/g, '/');
+            const dt = new Date(`${formattedDate} ${timeStr}`);
+            if (!isNaN(dt.getTime())) return dt;
+            return new Date(`${dateStr}T${timeStr}`);
+        }
+
+        function formatLocalDate(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         function startLoadingProgress() {
             const overlay = document.getElementById('loadingOverlay');
             const bar = document.getElementById('progressBar');
@@ -256,101 +273,95 @@
             }, 1000);
         }
 
-        // ดึงข้อมูลจาก Firebase Firestore Collection 'orders'
-        // ดึงข้อมูลจาก Firebase Firestore Collection 'orders' (ครอบคลุมชื่อ Field ทุกรูปแบบ)
-// ดึงข้อมูลจาก Firebase Firestore ปรับโครงสร้างตรงตามเอกสารจริง
-async function loadDashboardData() {
-    const icon = document.getElementById('refreshIcon');
-    if (icon) icon.classList.add('fa-spin');
-    
-    startLoadingProgress();
-    
-    try {
-        const snapshot = await db.collection('orders').get();
-        const fetchedOrders = [];
-        const fetchedDetails = [];
+        // ดึงข้อมูลจาก Firebase Firestore
+        async function loadDashboardData() {
+            const icon = document.getElementById('refreshIcon');
+            if (icon) icon.classList.add('fa-spin');
+            
+            startLoadingProgress();
+            
+            try {
+                const snapshot = await db.collection('orders').get();
+                const fetchedOrders = [];
+                const fetchedDetails = [];
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const orderId = doc.id;
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const orderId = doc.id;
 
-            // 1. อ่านวันที่ เวลา และเลขคิว (billNo)
-            let dateStr = data.date || '';
-            let timeStr = data.time || '00:00';
-            const queueNo = data.billNo ?? data.queue ?? '-';
+                    let dateStr = data.date || '';
+                    let timeStr = data.time || '00:00';
+                    const queueNo = data.billNo ?? data.queue ?? '-';
 
-            // 2. ดึงรายการสินค้าจากอาร์เรย์ pieces
-            const piecesList = data.pieces || data.items || [];
-            let calculatedTotal = 0;
+                    const piecesList = data.pieces || data.items || [];
+                    let calculatedTotal = 0;
 
-            if (Array.isArray(piecesList)) {
-                piecesList.forEach(p => {
-                    // อ่านชื่อไส้ขนมจากอาร์เรย์ items ภายใน piece
-                    let fillingName = 'ไส้รวม';
-                    if (Array.isArray(p.items) && p.items.length > 0) {
-                        fillingName = p.items.join(' + ');
-                    } else if (typeof p.items === 'string') {
-                        fillingName = p.items;
-                    } else if (p.filling) {
-                        fillingName = p.filling;
+                    if (Array.isArray(piecesList)) {
+                        piecesList.forEach(p => {
+                            let fillingName = 'ไส้รวม';
+                            if (Array.isArray(p.items) && p.items.length > 0) {
+                                fillingName = p.items.join(' + ');
+                            } else if (typeof p.items === 'string') {
+                                fillingName = p.items;
+                            } else if (p.filling) {
+                                fillingName = p.filling;
+                            }
+
+                            const qty = Number(p.qty || 1);
+                            const price = Number(p.price || 0);
+                            const itemTotal = price * qty;
+
+                            calculatedTotal += itemTotal;
+
+                            fetchedDetails.push({
+                                billId: orderId,
+                                filling: fillingName,
+                                qty: qty,
+                                pricePerPiece: price,
+                                total: itemTotal
+                            });
+                        });
                     }
 
-                    const qty = Number(p.qty || 1);
-                    const price = Number(p.price || 0);
-                    const itemTotal = price * qty;
+                    const totalAmt = Number(data.totalAmount || data.totalPrice || calculatedTotal);
 
-                    calculatedTotal += itemTotal;
-
-                    fetchedDetails.push({
-                        billId: orderId,
-                        filling: fillingName,
-                        qty: qty,
-                        pricePerPiece: price,
-                        total: itemTotal
-                    });
+                    const orderObj = {
+                        id: orderId,
+                        queue: queueNo,
+                        date: dateStr,
+                        time: timeStr,
+                        totalAmount: totalAmt,
+                        status: data.status || 'done'
+                    };
+                    fetchedOrders.push(orderObj);
                 });
+
+                RAW_DATA.orders = fetchedOrders;
+                RAW_DATA.details = fetchedDetails;
+                RAW_DATA.monthly = calculateMonthlySummary(fetchedOrders, fetchedDetails);
+
+                if (icon) icon.classList.remove('fa-spin');
+
+                finishLoadingProgress(function() {
+                    renderMonthlySummary();
+                    changeTimeRange(currentRangeType);
+                });
+
+            } catch (error) {
+                console.error("Firebase fetch error:", error);
+                if (icon) icon.classList.remove('fa-spin');
+                failLoadingProgress();
+                alert('ไม่สามารถดึงข้อมูลจาก Firebase ได้: ' + error.message);
             }
+        }
 
-            // 3. ใช้ยอดรวมที่คำนวณได้จากชิ้นขนม
-            const totalAmt = Number(data.totalAmount || data.totalPrice || calculatedTotal);
-
-            const orderObj = {
-                id: orderId,
-                queue: queueNo,
-                date: dateStr,
-                time: timeStr,
-                totalAmount: totalAmt,
-                status: data.status || 'done'
-            };
-            fetchedOrders.push(orderObj);
-        });
-
-        RAW_DATA.orders = fetchedOrders;
-        RAW_DATA.details = fetchedDetails;
-        RAW_DATA.monthly = calculateMonthlySummary(fetchedOrders, fetchedDetails);
-
-        if (icon) icon.classList.remove('fa-spin');
-
-        finishLoadingProgress(function() {
-            renderMonthlySummary();
-            changeTimeRange(currentRangeType);
-        });
-
-    } catch (error) {
-        console.error("Firebase fetch error:", error);
-        if (icon) icon.classList.remove('fa-spin');
-        failLoadingProgress();
-        alert('ไม่สามารถดึงข้อมูลจาก Firebase ได้: ' + error.message);
-    }
-}
-
-        // คำนวณสรุปรายเดือนจากข้อมูลออเดอร์ในระบบ
+        // คำนวณสรุปรายเดือน
         function calculateMonthlySummary(orders, details) {
             const monthlyMap = {};
 
             orders.forEach(order => {
                 if (!order.date) return;
-                const d = new Date(order.date);
+                const d = parseDateTime(order.date, order.time || '00:00');
                 if (isNaN(d.getTime())) return;
 
                 const year = d.getFullYear();
@@ -477,8 +488,8 @@ async function loadDashboardData() {
                 return;
             }
 
-            document.getElementById('startDate').value = start.toISOString().split('T')[0];
-            document.getElementById('endDate').value = end.toISOString().split('T')[0];
+            document.getElementById('startDate').value = formatLocalDate(start);
+            document.getElementById('endDate').value = formatLocalDate(end);
             processFilteredData();
         }
 
@@ -487,18 +498,17 @@ async function loadDashboardData() {
             const endVal = document.getElementById('endDate').value;
             if(!startVal || !endVal) return;
 
-            const startDate = new Date(startVal);
-            startDate.setHours(0,0,0,0);
-            const endDate = new Date(endVal);
-            endDate.setHours(23,59,59,999);
+            const startDate = parseDateTime(startVal, '00:00:00');
+            const endDate = parseDateTime(endVal, '23:59:59');
 
             let filteredOrders = RAW_DATA.orders.filter(order => {
                 if(!order.date) return false;
-                const orderDate = new Date(order.date);
+                const orderDate = parseDateTime(order.date, order.time || '00:00');
                 return orderDate >= startDate && orderDate <= endDate && (order.status === 'done' || order.status === 'completed' || !order.status);
             });
 
-            filteredOrders.sort((a,b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
+            // เรียงลำดับโดยใช้ parseDateTime ให้รองรับ Safari
+            filteredOrders.sort((a,b) => parseDateTime(b.date, b.time) - parseDateTime(a.date, a.time));
             cachedFilteredOrders = filteredOrders;
 
             let itemCounts = {};
@@ -582,7 +592,7 @@ async function loadDashboardData() {
                 row.className = "p-3.5 hover:bg-slate-50/80 active:bg-slate-100/70 transition flex items-center justify-between cursor-pointer";
                 row.setAttribute('onclick', `openBillDetails('${order.id}', '${order.queue}', '${order.time}', ${order.totalAmount})`);
                 
-                let d = new Date(order.date);
+                let d = parseDateTime(order.date, order.time || '00:00');
                 let formattedDate = isNaN(d.getTime()) ? order.date : `${d.getDate()}/${d.getMonth()+1}`;
 
                 row.innerHTML = `
@@ -692,9 +702,10 @@ async function loadDashboardData() {
             document.getElementById('detailsModal').classList.add('hidden');
         }
 
-        window.onload = function() {
+        // ใช้ DOMContentLoaded แทน window.onload เพื่อการทำงานที่รวดเร็วบนเบราว์เซอร์มือถือ
+        document.addEventListener('DOMContentLoaded', function() {
             loadDashboardData();
-        };
+        });
     </script>
 </body>
 </html>
